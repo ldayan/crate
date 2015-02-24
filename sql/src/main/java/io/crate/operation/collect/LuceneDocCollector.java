@@ -23,6 +23,7 @@ package io.crate.operation.collect;
 
 import com.google.common.collect.ImmutableMap;
 import io.crate.Constants;
+import io.crate.action.sql.query.CrateSearchService;
 import io.crate.analyze.WhereClause;
 import io.crate.breaker.CrateCircuitBreakerService;
 import io.crate.breaker.RamAccountingContext;
@@ -31,9 +32,9 @@ import io.crate.metadata.Functions;
 import io.crate.operation.*;
 import io.crate.operation.reference.doc.lucene.CollectorContext;
 import io.crate.operation.reference.doc.lucene.LuceneCollectorExpression;
-import org.apache.lucene.index.AtomicReader;
-import org.apache.lucene.index.AtomicReaderContext;
-import org.apache.lucene.index.FieldInfo;
+import io.crate.operation.reference.doc.lucene.LuceneDocLevelReferenceResolver;
+import io.crate.planner.symbol.Symbol;
+import org.apache.lucene.index.*;
 import org.apache.lucene.search.*;
 import org.elasticsearch.cache.recycler.CacheRecycler;
 import org.elasticsearch.cache.recycler.PageCacheRecycler;
@@ -66,6 +67,7 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
     private boolean visitorEnabled = false;
     private AtomicReader currentReader;
     private RamAccountingContext ramAccountingContext;
+    private CollectInputSymbolVisitor<LuceneCollectorExpression<?>> inputSymbolVisitor;
 
     public static class CollectorFieldsVisitor extends FieldsVisitor {
 
@@ -101,6 +103,11 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
     private final SearchContext searchContext;
     private final RowDownstreamHandle downstream;
     private final List<LuceneCollectorExpression<?>> collectorExpressions;
+    private final Integer limit;
+    private final List<Symbol> orderBy;
+    private final boolean[] reverseFlags;
+    private final Boolean[] nullsFirst;
+
 
     public LuceneDocCollector(ThreadPool threadPool,
                               ClusterService clusterService,
@@ -114,7 +121,15 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
                               List<LuceneCollectorExpression<?>> collectorExpressions,
                               Functions functions,
                               WhereClause whereClause,
-                              RowDownstream downStreamProjector) throws Exception {
+                              RowDownstream downStreamProjector,
+                              Integer limit,
+                              List<Symbol> orderBy,
+                              boolean[] reverseFlags,
+                              Boolean[] nullsFirst) throws Exception {
+        this.limit = limit;
+        this.orderBy = orderBy;
+        this.reverseFlags = reverseFlags;
+        this.nullsFirst = nullsFirst;
         this.downstream = downStreamProjector.registerUpstream(this);
         SearchShardTarget searchShardTarget = new SearchShardTarget(
                 clusterService.localNode().id(), shardId.getIndex(), shardId.id());
@@ -138,6 +153,8 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
                 bigArrays,
                 threadPool.estimatedTimeInMillisCounter()
         );
+        inputSymbolVisitor =
+                new CollectInputSymbolVisitor<>(functions, LuceneDocLevelReferenceResolver.INSTANCE);
         LuceneQueryBuilder builder = new LuceneQueryBuilder(functions, searchContext, indexService.cache());
         try {
             LuceneQueryBuilder.Context ctx = builder.convert(whereClause);
@@ -210,7 +227,28 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
 
         // do the lucene search
         try {
-            searchContext.searcher().search(query, this);
+            Sort sort = null;
+            if( orderBy != null) {
+                sort = CrateSearchService.generateLuceneSort(searchContext, orderBy,
+                    reverseFlags, nullsFirst,
+                    inputSymbolVisitor);
+
+            }
+            if(sort == null) {
+                sort = new Sort();
+            }
+            TopFieldDocs topFieldDocs = searchContext.searcher().search(query, limit, sort);
+            // TODO: get sort field values (FieldDoc)scoreDoc
+            IndexReaderContext indexReaderContext = searchContext.searcher().getTopReaderContext();
+            if(!indexReaderContext.leaves().isEmpty()) {
+                for (ScoreDoc scoreDoc : topFieldDocs.scoreDocs) {
+                    int readerIndex = ReaderUtil.subIndex(scoreDoc.doc, searchContext.searcher().getIndexReader().leaves());
+                    AtomicReaderContext subReaderContext = searchContext.searcher().getIndexReader().leaves().get(readerIndex);
+                    int subDoc = scoreDoc.doc - subReaderContext.docBase;
+                    setNextReader(subReaderContext);
+                    collect(subDoc);
+                }
+            }
             downstream.finish();
         } catch (CollectionAbortedException e) {
             // yeah, that's ok! :)

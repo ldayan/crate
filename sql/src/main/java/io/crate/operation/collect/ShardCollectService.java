@@ -187,6 +187,10 @@ public class ShardCollectService {
                 docCtx.docLevelExpressions(),
                 functions,
                 collectNode.whereClause(),
-                downstream);
+                downstream,
+                collectNode.limit(),
+                collectNode.orderBy(),
+                collectNode.reverseFlags(),
+                collectNode.nullsFirst());
     }
 }

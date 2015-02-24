@@ -1049,4 +1049,14 @@ public class GroupByAggregateTest extends SQLTransportIntegrationTest {
                 "1| 44\n" +
                 "1| 45\n"));
     }
+
+    @Test
+    public void groupBySortOnGroupingKey() throws Exception {
+        execute("select department from employees group by department order by department limit 3");
+        assertThat(response.rowCount(), is(3L));
+        assertThat((String)response.rows()[0][0], is("HR"));
+        assertThat((String)response.rows()[1][0], is("engineering"));
+        assertThat((String)response.rows()[2][0], is("internship"));
+    }
+
 }
