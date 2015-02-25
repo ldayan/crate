@@ -21,8 +21,9 @@
 
 package io.crate.analyze;
 
-import com.google.common.collect.ImmutableList;
+import io.crate.planner.symbol.Function;
 import io.crate.planner.symbol.Symbol;
+import io.crate.planner.symbol.SymbolVisitor;
 
 import java.util.List;
 
@@ -60,4 +61,31 @@ public class OrderBy {
     public void normalize(EvaluatingNormalizer normalizer) {
         normalizer.normalizeInplace(orderBySymbols);
     }
+
+    public boolean hasFunction() {
+        SortSymbolContext ctx = new SortSymbolContext();
+        for( Symbol symbol : this.orderBySymbols()) {
+            SortSymbolVisitor.INSTANCE.process(symbol, ctx);
+            if(ctx.hasFunction) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static class SortSymbolContext {
+        public boolean hasFunction = false;
+    }
+
+    private static class SortSymbolVisitor extends SymbolVisitor<SortSymbolContext, Void> {
+
+        public static final SortSymbolVisitor INSTANCE = new SortSymbolVisitor();
+
+        @Override
+        public Void visitFunction(Function symbol, SortSymbolContext context) {
+            context.hasFunction = true;
+            return super.visitFunction(symbol, context);
+        }
+    }
+
 }
