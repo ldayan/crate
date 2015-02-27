@@ -150,13 +150,21 @@ public class ReduceOnCollectorGroupByConsumer implements Consumer {
                 table.tableRelation().validateOrderBy(orderBy);
             }
 
+            PlanNodeBuilder.CollectorOrderByAndLimit collectorOrderByAndLimit;
+            if(context.rootRelation() == table) {
+                collectorOrderByAndLimit = PlanNodeBuilder.createCollectorOrderAndLimit(table.querySpec());
+            } else {
+                collectorOrderByAndLimit = new PlanNodeBuilder.CollectorOrderByAndLimit(null, null);
+            }
+
             List<Projection> projections = new ArrayList<>();
             GroupProjection groupProjection = projectionBuilder.groupProjection(
                     splitPoints.leaves(),
                     table.querySpec().groupBy(),
                     splitPoints.aggregates(),
                     Aggregation.Step.ITER,
-                    Aggregation.Step.FINAL
+                    Aggregation.Step.FINAL,
+                    collectorOrderByAndLimit.limit()
             );
             groupProjection.setRequiredGranularity(RowGranularity.SHARD);
             projections.add(groupProjection);
@@ -190,23 +198,13 @@ public class ReduceOnCollectorGroupByConsumer implements Consumer {
                 ));
             }
 
-            Integer collectorLimit = null;
-            if( table.querySpec().limit() != null && !table.querySpec().hasAggregates() ) {
-                collectorLimit = table.querySpec().offset() + table.querySpec().limit();
-            }
-            OrderBy collectOrderBy = orderBy;
-            if(collectOrderBy == null && context.rootRelation() == table) {
-                // No orderBy given, order by groupKeys
-                collectOrderBy = OrderBy.fromSymbols(table.querySpec().groupBy());
-            }
-            collectOrderBy = collectOrderBy != null && collectOrderBy.hasFunction() ? null : collectOrderBy;
             CollectNode collectNode = PlanNodeBuilder.collect(
                     tableInfo,
                     table.querySpec().where(),
                     splitPoints.leaves(),
                     ImmutableList.copyOf(projections),
-                    collectOrderBy,
-                    collectorLimit
+                    collectorOrderByAndLimit.orderBy(),
+                    collectorOrderByAndLimit.limit()
             );
             // handler
             List<Projection> handlerProjections = new ArrayList<>();

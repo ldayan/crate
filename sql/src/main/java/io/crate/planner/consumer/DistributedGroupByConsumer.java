@@ -92,38 +92,32 @@ public class DistributedGroupByConsumer implements Consumer {
 
             SplitPoints splitPoints = projectionBuilder.getSplitPoints();
 
+            boolean isRootRelation = context.consumerContext.rootRelation() == table;
+            PlanNodeBuilder.CollectorOrderByAndLimit collectorOrderByAndLimit;
+            if(isRootRelation) {
+               collectorOrderByAndLimit = PlanNodeBuilder.createCollectorOrderAndLimit(table.querySpec());
+            } else {
+                collectorOrderByAndLimit = new PlanNodeBuilder.CollectorOrderByAndLimit(null, null);
+            }
+
             // start: Map/Collect side
             GroupProjection groupProjection = projectionBuilder.groupProjection(
                     splitPoints.leaves(),
                     table.querySpec().groupBy(),
                     splitPoints.aggregates(),
                     Aggregation.Step.ITER,
-                    Aggregation.Step.PARTIAL);
+                    Aggregation.Step.PARTIAL,
+                    collectorOrderByAndLimit.limit());
 
-            OrderBy orderBy = table.querySpec().orderBy();
-            if (orderBy != null) {
-                table.tableRelation().validateOrderBy(orderBy);
-            }
 
-            Integer collectorLimit = null;
-            if( table.querySpec().limit() != null && !table.querySpec().hasAggregates() ) {
-                collectorLimit = table.querySpec().offset() + table.querySpec().limit();
-            }
-            boolean isRootRelation = context.consumerContext.rootRelation() == table;
-            OrderBy collectOrderBy = orderBy;
-            if(collectOrderBy == null && isRootRelation) {
-                // No orderBy given, order by groupKeys
-                collectOrderBy = OrderBy.fromSymbols(table.querySpec().groupBy());
-            }
-            collectOrderBy = collectOrderBy != null && collectOrderBy.hasFunction() ? null : collectOrderBy;
             CollectNode collectNode = PlanNodeBuilder.distributingCollect(
                     tableInfo,
                     table.querySpec().where(),
                     splitPoints.leaves(),
                     Lists.newArrayList(routing.nodes()),
                     ImmutableList.<Projection>of(groupProjection),
-                    collectOrderBy,
-                    collectorLimit
+                    collectorOrderByAndLimit.orderBy(),
+                    collectorOrderByAndLimit.limit()
             );
             // end: Map/Collect side
 
@@ -140,7 +134,14 @@ public class DistributedGroupByConsumer implements Consumer {
                     table.querySpec().groupBy(),
                     splitPoints.aggregates(),
                     Aggregation.Step.PARTIAL,
-                    Aggregation.Step.FINAL));
+                    Aggregation.Step.FINAL,
+                    null));
+
+            OrderBy orderBy = table.querySpec().orderBy();
+            if (orderBy != null) {
+                table.tableRelation().validateOrderBy(orderBy);
+            }
+
             HavingClause havingClause = table.querySpec().having();
             if (havingClause != null) {
                 if (havingClause.noMatch()) {

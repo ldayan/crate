@@ -1313,6 +1313,7 @@ public class PlannerTest {
         assertThat(collectNode.limit(), is(4)); // limit + offset
         assertThat(collectNode.orderBy().size(), is(1));
         assertThat(((Reference)collectNode.orderBy().get(0)).ident().columnIdent().name(), is("id"));
+        assertThat(((GroupProjection)collectNode.projections().get(0)).limit(), is(4));
     }
 
     @Test
@@ -1320,8 +1321,9 @@ public class PlannerTest {
         NonDistributedGroupBy planNode = (NonDistributedGroupBy) plan(
                 "select id from users group by id order by avg(id) limit 2 offset 2");
         CollectNode collectNode = planNode.collectNode();
-        assertThat(collectNode.limit(), is(Integer.MAX_VALUE)); // limit + offset
+        assertThat(collectNode.limit(), is(nullValue()));
         assertThat(collectNode.orderBy(), is(nullValue()));
+        assertThat(((GroupProjection)collectNode.projections().get(0)).limit(), is(nullValue()));
     }
 
     @Test
@@ -1329,9 +1331,10 @@ public class PlannerTest {
         DistributedGroupBy distributedGroupBy = (DistributedGroupBy) plan(
                 "select name from users group by name order by name desc limit 1 offset 3");
         CollectNode collectNode = distributedGroupBy.collectNode();
-        assertThat(collectNode.limit(), is(4)); // limit + offset
+        assertThat(collectNode.limit(), is(4));
         assertThat(collectNode.orderBy().size(), is(1));
         assertThat(((Reference)collectNode.orderBy().get(0)).ident().columnIdent().name(), is("name"));
+        assertThat(((GroupProjection)collectNode.projections().get(0)).limit(), is(4));
     }
 
     @Test
@@ -1340,8 +1343,9 @@ public class PlannerTest {
                 "select min(name) from users group by name order by min(name) desc limit 1 offset 3");
         // order and limit is not applied
         CollectNode collectNode = distributedGroupBy.collectNode();
-        assertThat(collectNode.limit(), is(Integer.MAX_VALUE));
+        assertThat(collectNode.limit(), is(nullValue()));
         assertThat(collectNode.orderBy(), is(nullValue()));
+        assertThat(((GroupProjection)collectNode.projections().get(0)).limit(), is(nullValue()));
     }
 
     @Test
@@ -1350,7 +1354,7 @@ public class PlannerTest {
      */
     public void testDistributedGroupbyAutoOrderByGroupKeys() throws Exception {
         DistributedGroupBy planNode = (DistributedGroupBy) plan(
-                "select id, name from users group by id, name");
+                "select id, name from users group by id, name limit 2");
         CollectNode collectNode = planNode.collectNode();
         assertThat(collectNode.orderBy().size(), is(2));
         assertThat(((Reference)collectNode.orderBy().get(0)).ident().columnIdent().name(), is("id"));

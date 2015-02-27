@@ -55,7 +55,7 @@ public class CollectNode extends AbstractDQLPlanNode {
     private boolean isPartitioned = false;
     private boolean isSystemSchema = false;
 
-    private int limit = Integer.MAX_VALUE;
+    private Integer limit = null;
     private List<Symbol> orderBy;
     boolean[] reverseFlags;
     private Boolean[] nullsFirst;
@@ -97,7 +97,7 @@ public class CollectNode extends AbstractDQLPlanNode {
         this(id, routing, ImmutableList.<Symbol>of(), ImmutableList.<Projection>of());
     }
 
-    public int limit() {
+    public @Nullable Integer limit() {
         return limit;
     }
 
@@ -244,7 +244,9 @@ public class CollectNode extends AbstractDQLPlanNode {
             jobId = Optional.of(new UUID(in.readLong(), in.readLong()));
         }
 
-        limit = in.readVInt();
+        if( in.readBoolean()) {
+            limit = in.readVInt();
+        }
         int numOrderBy = in.readVInt();
 
         if (numOrderBy > 0) {
@@ -300,7 +302,12 @@ public class CollectNode extends AbstractDQLPlanNode {
             out.writeLong(jobId.get().getMostSignificantBits());
             out.writeLong(jobId.get().getLeastSignificantBits());
         }
-        out.writeVInt(limit);
+        if (limit != null ) {
+            out.writeBoolean(true);
+            out.writeVInt(limit);
+        } else {
+            out.writeBoolean(false);
+        }
         if (isOrdered()) {
             out.writeVInt(reverseFlags.length);
             for (boolean reverseFlag : reverseFlags) {

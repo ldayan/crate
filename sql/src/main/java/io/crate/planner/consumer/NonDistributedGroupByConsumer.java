@@ -119,35 +119,29 @@ public class NonDistributedGroupByConsumer implements Consumer {
             ProjectionBuilder projectionBuilder = new ProjectionBuilder(table.querySpec());
             SplitPoints splitPoints = projectionBuilder.getSplitPoints();
 
+            PlanNodeBuilder.CollectorOrderByAndLimit collectorOrderByAndLimit;
+            if(context.consumerContext.rootRelation() == table) {
+                collectorOrderByAndLimit = PlanNodeBuilder.createCollectorOrderAndLimit(table.querySpec());
+            } else {
+                collectorOrderByAndLimit = new PlanNodeBuilder.CollectorOrderByAndLimit(null, null);
+            }
+
             // mapper / collect
             GroupProjection groupProjection = projectionBuilder.groupProjection(
                     splitPoints.leaves(),
                     table.querySpec().groupBy(),
                     splitPoints.aggregates(),
                     Aggregation.Step.ITER,
-                    Aggregation.Step.PARTIAL);
+                    Aggregation.Step.PARTIAL,
+                    collectorOrderByAndLimit.limit());
 
-            OrderBy orderBy = table.querySpec().orderBy();
-            if (orderBy != null) {
-                table.tableRelation().validateOrderBy(orderBy);
-            }
-            Integer collectorLimit = null;
-            if( table.querySpec().limit() != null && !table.querySpec().hasAggregates() ) {
-                collectorLimit = table.querySpec().offset() + table.querySpec().limit();
-            }
-            OrderBy collectOrderBy = orderBy;
-            if(collectOrderBy == null && context.consumerContext.rootRelation() == table) {
-                // No orderBy given, order by groupKeys
-                collectOrderBy = OrderBy.fromSymbols(table.querySpec().groupBy());
-            }
-            collectOrderBy = collectOrderBy != null && collectOrderBy.hasFunction() ? null : collectOrderBy;
             CollectNode collectNode = PlanNodeBuilder.collect(
                     tableInfo,
                     table.querySpec().where(),
                     splitPoints.leaves(),
                     ImmutableList.<Projection>of(groupProjection),
-                    collectOrderBy,
-                    collectorLimit
+                    collectorOrderByAndLimit.orderBy(),
+                    collectorOrderByAndLimit.limit()
             );
             // handler
             List<Symbol> collectOutputs = new ArrayList<>(
@@ -156,8 +150,10 @@ public class NonDistributedGroupByConsumer implements Consumer {
             collectOutputs.addAll(groupBy);
             collectOutputs.addAll(splitPoints.aggregates());
 
-
-
+            OrderBy orderBy = table.querySpec().orderBy();
+            if (orderBy != null) {
+                table.tableRelation().validateOrderBy(orderBy);
+            }
 
             List<Projection> projections = new ArrayList<>();
             projections.add(projectionBuilder.groupProjection(
@@ -165,7 +161,8 @@ public class NonDistributedGroupByConsumer implements Consumer {
                     table.querySpec().groupBy(),
                     splitPoints.aggregates(),
                     Aggregation.Step.PARTIAL,
-                    Aggregation.Step.FINAL
+                    Aggregation.Step.FINAL,
+                    null
             ));
 
             HavingClause havingClause = table.querySpec().having();

@@ -33,7 +33,7 @@ import io.crate.operation.*;
 import io.crate.operation.reference.doc.lucene.CollectorContext;
 import io.crate.operation.reference.doc.lucene.LuceneCollectorExpression;
 import io.crate.operation.reference.doc.lucene.LuceneDocLevelReferenceResolver;
-import io.crate.operation.reference.doc.lucene.OrderByColumnCollectorExpression;
+import io.crate.operation.reference.doc.lucene.PrefetchedValueCollectorExpression;
 import io.crate.planner.symbol.Symbol;
 import org.apache.lucene.index.*;
 import org.apache.lucene.search.*;
@@ -42,6 +42,7 @@ import org.apache.lucene.util.BytesRefBuilder;
 import org.elasticsearch.cache.recycler.CacheRecycler;
 import org.elasticsearch.cache.recycler.PageCacheRecycler;
 import org.elasticsearch.cluster.ClusterService;
+import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.util.BigArrays;
 import org.elasticsearch.index.fielddata.IndexFieldData;
 import org.elasticsearch.index.fieldvisitor.FieldsVisitor;
@@ -127,9 +128,9 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
                               WhereClause whereClause,
                               RowDownstream downStreamProjector,
                               Integer limit,
-                              List<Symbol> orderBy,
-                              boolean[] reverseFlags,
-                              Boolean[] nullsFirst) throws Exception {
+                              @Nullable List<Symbol> orderBy,
+                              @Nullable boolean[] reverseFlags,
+                              @Nullable Boolean[] nullsFirst) throws Exception {
         this.limit = limit;
         this.orderBy = orderBy;
         this.reverseFlags = reverseFlags;
@@ -210,7 +211,7 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
     public void setNextOrderByValues(ScoreDoc scoreDoc, SortField[] sortFields) {
         int i = 0;
         for (LuceneCollectorExpression expr : collectorExpressions) {
-            if ( expr instanceof OrderByColumnCollectorExpression) {
+            if ( expr instanceof PrefetchedValueCollectorExpression) {
                 Object fieldValue = ((FieldDoc)scoreDoc).fields[i];
                 Object missingValue = missingValue(reverseFlags[i],
                         nullsFirst[i],
@@ -218,8 +219,8 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
                 if(fieldValue != null && fieldValue.equals(missingValue)) {
                     fieldValue = null;
                 }
-                Object value = ((OrderByColumnCollectorExpression) expr).valueType().value(fieldValue);
-                ((OrderByColumnCollectorExpression) expr).value(value);
+                Object value = ((PrefetchedValueCollectorExpression) expr).valueType().value(fieldValue);
+                ((PrefetchedValueCollectorExpression) expr).value(value);
             }
         }
     }
@@ -248,27 +249,25 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
 
         // do the lucene search
         try {
-            Sort sort;
-            if( orderBy != null) {
-                sort = CrateSearchService.generateLuceneSort(searchContext, orderBy,
-                    reverseFlags, nullsFirst,
-                    inputSymbolVisitor);
+            if( orderBy != null && limit != null) {
+                Sort sort = CrateSearchService.generateLuceneSort(searchContext, orderBy,
+                        reverseFlags, nullsFirst,
+                        inputSymbolVisitor);
+                TopFieldDocs topFieldDocs = searchContext.searcher().search(query, limit, sort);
+                IndexReaderContext indexReaderContext = searchContext.searcher().getTopReaderContext();
 
-            } else {
-                sort = new Sort();
-            }
-            TopFieldDocs topFieldDocs = searchContext.searcher().search(query, limit, sort);
-            IndexReaderContext indexReaderContext = searchContext.searcher().getTopReaderContext();
-
-            if(!indexReaderContext.leaves().isEmpty()) {
-                for (ScoreDoc scoreDoc : topFieldDocs.scoreDocs) {
-                    int readerIndex = ReaderUtil.subIndex(scoreDoc.doc, searchContext.searcher().getIndexReader().leaves());
-                    AtomicReaderContext subReaderContext = searchContext.searcher().getIndexReader().leaves().get(readerIndex);
-                    int subDoc = scoreDoc.doc - subReaderContext.docBase;
-                    setNextReader(subReaderContext);
-                    setNextOrderByValues(scoreDoc, sort.getSort());
-                    collect(subDoc);
+                if(!indexReaderContext.leaves().isEmpty()) {
+                    for (ScoreDoc scoreDoc : topFieldDocs.scoreDocs) {
+                        int readerIndex = ReaderUtil.subIndex(scoreDoc.doc, searchContext.searcher().getIndexReader().leaves());
+                        AtomicReaderContext subReaderContext = searchContext.searcher().getIndexReader().leaves().get(readerIndex);
+                        int subDoc = scoreDoc.doc - subReaderContext.docBase;
+                        setNextReader(subReaderContext);
+                        setNextOrderByValues(scoreDoc, sort.getSort());
+                        collect(subDoc);
+                    }
                 }
+            } else {
+                searchContext.searcher().search(query, this);
             }
             downstream.finish();
         } catch (CollectionAbortedException e) {
@@ -291,8 +290,8 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
         MAX_TERM = builder.toBytesRef();
     }
 
-    /*
-     * Calculates the missing Values as in {@link org.elasticsearch.index.fielddata.IndexFieldData#missingObject}
+
+    /** Calculates the missing Values as in {@link org.elasticsearch.index.fielddata.IndexFieldData#missingObject}
      * The results in the {@link ScoreDoc} contains this missingValues instead of nulls. Because we
      * need nulls in the result, it's necessary to check if a value is a missingValue.
      */

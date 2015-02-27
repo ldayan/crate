@@ -21,7 +21,6 @@
 
 package io.crate.planner.projection;
 
-import io.crate.analyze.OrderBy;
 import io.crate.planner.RowGranularity;
 import io.crate.planner.symbol.Aggregation;
 import io.crate.planner.symbol.Symbol;
@@ -38,9 +37,7 @@ public class GroupProjection extends Projection {
     List<Symbol> keys;
     List<Aggregation> values;
     List<Symbol> outputs;
-    OrderBy orderBy;
-    int offset = 0;
-    int limit;
+    Integer limit = null;
 
     private RowGranularity requiredGranularity = RowGranularity.CLUSTER;
 
@@ -60,12 +57,8 @@ public class GroupProjection extends Projection {
     }
 
     public GroupProjection(List<Symbol> keys, List<Aggregation> values,
-                           @Nullable OrderBy orderBy,
-                           int offset,
                            @Nullable Integer limit) {
         this(keys, values);
-        this.orderBy = orderBy;
-        this.offset = offset;
         this.limit = limit;
     }
 
@@ -83,6 +76,10 @@ public class GroupProjection extends Projection {
 
     public void values(List<Aggregation> values) {
         this.values = values;
+    }
+
+    public Integer limit() {
+        return limit;
     }
 
     @Override
@@ -122,6 +119,9 @@ public class GroupProjection extends Projection {
             values.add((Aggregation) Symbol.fromStream(in));
         }
         requiredGranularity = RowGranularity.fromStream(in);
+        if (in.readBoolean() ) {
+            limit = in.readVInt();
+        }
     }
 
     @Override
@@ -136,6 +136,12 @@ public class GroupProjection extends Projection {
             Symbol.toStream(symbol, out);
         }
         RowGranularity.toStream(requiredGranularity, out);
+        if ( limit != null ) {
+            out.writeBoolean(true);
+            out.writeVInt(limit);
+        } else {
+            out.writeBoolean(false);
+        }
     }
 
     @Override
@@ -147,6 +153,7 @@ public class GroupProjection extends Projection {
 
         if (!keys.equals(that.keys)) return false;
         if (values != null ? !values.equals(that.values) : that.values != null) return false;
+        if (limit != null ? !limit.equals(that.limit) : that.limit != null) return false;
 
         return true;
     }

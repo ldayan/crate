@@ -26,6 +26,8 @@ import org.junit.Test;
 import java.util.Arrays;
 import java.util.concurrent.ExecutionException;
 
+import static io.crate.testing.TestingHelpers.isRow;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.core.Is.is;
 import static org.junit.Assert.assertThat;
@@ -65,7 +67,8 @@ public class GroupingProjectorTest {
                 keys,
                 new CollectExpression[0],
                 aggregations,
-                RAM_ACCOUNTING_CONTEXT
+                RAM_ACCOUNTING_CONTEXT,
+                null
         );
         CollectingProjector collectingProjector = new CollectingProjector();
         projector.registerUpstream(null);
@@ -81,6 +84,44 @@ public class GroupingProjectorTest {
         Bucket rows = collectingProjector.result().get();
         assertThat(rows.size(), is(2));
         assertThat(rows.iterator().next().get(1), instanceOf(Long.class));
+    }
+
+    @Test
+    public void testLimit() throws Exception {
+        BytesRef human = new BytesRef("human");
+        BytesRef vogon = new BytesRef("vogon");
+        BytesRef mouse = new BytesRef("mouse");
+
+        ImmutableList<Input<?>> keys = ImmutableList.<Input<?>>of(
+                new DummyInput(human, human, vogon, vogon, mouse, mouse));
+        GroupingProjector projector = new GroupingProjector(
+                Arrays.asList(DataTypes.STRING),
+                keys,
+                new CollectExpression[0],
+                new AggregationContext[0],
+                RAM_ACCOUNTING_CONTEXT,
+                2
+        );
+        CollectingProjector collectingProjector = new CollectingProjector();
+        projector.registerUpstream(null);
+        projector.downstream(collectingProjector);
+
+        Row emptyRow = new RowN(new Object[]{});
+        projector.startProjection();
+        assertThat(projector.setNextRow(emptyRow), is(true)); // human
+        assertThat(projector.setNextRow(emptyRow), is(true)); // human
+        assertThat(projector.setNextRow(emptyRow), is(true)); // vogon
+        assertThat(projector.setNextRow(emptyRow), is(true)); // vogon
+        assertThat(projector.setNextRow(emptyRow), is(false)); // mouse
+        assertThat(projector.setNextRow(emptyRow), is(false)); // mouse
+        projector.upstreamFinished();
+
+        Bucket rows = collectingProjector.result().get();
+        assertThat(rows.size(), is(2));
+        assertThat(rows, containsInAnyOrder(
+                isRow(human),
+                isRow(vogon)
+        ));
     }
 
     class DummyInput implements Input<BytesRef> {

@@ -26,7 +26,7 @@ import io.crate.metadata.Functions;
 import io.crate.operation.AbstractImplementationSymbolVisitor;
 import io.crate.operation.Input;
 import io.crate.operation.reference.DocLevelReferenceResolver;
-import io.crate.operation.reference.doc.lucene.OrderByColumnCollectorExpression;
+import io.crate.operation.reference.doc.lucene.PrefetchedValueCollectorExpression;
 import io.crate.planner.node.dql.CollectNode;
 import io.crate.planner.symbol.Reference;
 import io.crate.planner.symbol.Symbol;
@@ -77,7 +77,9 @@ public class CollectInputSymbolVisitor<E extends Input<?>>
         Context context = newContext();
         if (node.toCollect() != null) {
             for (Symbol symbol : node.toCollect()) {
-                if(node.orderBy() != null && node.orderBy().contains(symbol) && !node.isSystemSchema()) {
+                if(node.orderBy() != null && node.limit() != null &&
+                        node.orderBy().contains(symbol) &&
+                        !node.isSystemSchema()) {
                     context.addOrderBySymbol(symbol);
                 }
                 context.add(process(symbol, context));
@@ -96,7 +98,7 @@ public class CollectInputSymbolVisitor<E extends Input<?>>
         // only doc level references are allowed here, since other granularities
         // should have been resolved by other visitors already
         if (context.orderBySymbols() != null && context.orderBySymbols().contains(symbol)) {
-            OrderByColumnCollectorExpression docLevelExpression = new OrderByColumnCollectorExpression(symbol.valueType());
+            PrefetchedValueCollectorExpression docLevelExpression = new PrefetchedValueCollectorExpression(symbol.valueType());
             context.docLevelExpressions.add(docLevelExpression);
             return docLevelExpression;
         } else {

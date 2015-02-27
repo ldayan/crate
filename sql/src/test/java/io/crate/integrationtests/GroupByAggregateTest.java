@@ -21,6 +21,7 @@
 
 package io.crate.integrationtests;
 
+import com.carrotsearch.randomizedtesting.annotations.Repeat;
 import io.crate.action.sql.SQLActionException;
 import io.crate.action.sql.SQLResponse;
 import io.crate.test.integration.CrateIntegrationTest;
@@ -697,12 +698,12 @@ public class GroupByAggregateTest extends SQLTransportIntegrationTest {
         ensureYellow();
 
         execute("insert into foo (id, name, country) values (?, ?, ?)", new Object[][]{
-                new Object[] { 1, "Arthur", "Austria" },
-                new Object[] { 2, "Trillian", "Austria" },
-                new Object[] { 3, "Marvin", "Austria" },
-                new Object[] { 4, "Jeltz", "German" },
-                new Object[] { 5, "Ford", "German" },
-                new Object[] { 6, "Slartibardfast", "Italy" },
+                new Object[]{1, "Arthur", "Austria"},
+                new Object[]{2, "Trillian", "Austria"},
+                new Object[]{3, "Marvin", "Austria"},
+                new Object[]{4, "Jeltz", "German"},
+                new Object[]{5, "Ford", "German"},
+                new Object[]{6, "Slartibardfast", "Italy"},
         });
         refresh();
 

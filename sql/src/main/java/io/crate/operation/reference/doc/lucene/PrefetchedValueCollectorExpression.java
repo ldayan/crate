@@ -2,13 +2,17 @@ package io.crate.operation.reference.doc.lucene;
 
 import io.crate.types.DataType;
 
-public class OrderByColumnCollectorExpression extends LuceneCollectorExpression<Object> {
+/**
+ * A {@link LuceneCollectorExpression} which can be used if a value is already
+ * given and has not to be fetched anymore.
+ */
+public class PrefetchedValueCollectorExpression extends LuceneCollectorExpression<Object> {
 
     private Object value;
 
     private final DataType valueType;
 
-    public OrderByColumnCollectorExpression(DataType valueType) {
+    public PrefetchedValueCollectorExpression(DataType valueType) {
         this.valueType = valueType;
     }
 
