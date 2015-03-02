@@ -25,7 +25,6 @@ import com.google.common.collect.ImmutableMap;
 import io.crate.Constants;
 import io.crate.action.sql.query.CrateSearchService;
 import io.crate.analyze.OrderBy;
-import io.crate.analyze.WhereClause;
 import io.crate.breaker.CrateCircuitBreakerService;
 import io.crate.breaker.RamAccountingContext;
 import io.crate.lucene.LuceneQueryBuilder;
@@ -35,12 +34,12 @@ import io.crate.operation.reference.doc.lucene.CollectorContext;
 import io.crate.operation.reference.doc.lucene.LuceneCollectorExpression;
 import io.crate.operation.reference.doc.lucene.LuceneDocLevelReferenceResolver;
 import io.crate.operation.reference.doc.lucene.OrderByCollectorExpression;
+import io.crate.planner.node.dql.CollectNode;
 import org.apache.lucene.index.*;
 import org.apache.lucene.search.*;
 import org.elasticsearch.cache.recycler.CacheRecycler;
 import org.elasticsearch.cache.recycler.PageCacheRecycler;
 import org.elasticsearch.cluster.ClusterService;
-import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.util.BigArrays;
 import org.elasticsearch.index.fieldvisitor.FieldsVisitor;
 import org.elasticsearch.index.mapper.internal.SourceFieldMapper;
@@ -119,12 +118,10 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
                               List<Input<?>> inputs,
                               List<LuceneCollectorExpression<?>> collectorExpressions,
                               Functions functions,
-                              WhereClause whereClause,
-                              RowDownstream downStreamProjector,
-                              @Nullable Integer limit,
-                              @Nullable OrderBy orderBy) {
-        this.limit = limit;
-        this.orderBy = orderBy;
+                              CollectNode collectNode,
+                              RowDownstream downStreamProjector) {
+        this.limit = collectNode.limit();
+        this.orderBy = collectNode.orderBy();
         this.downstream = downStreamProjector.registerUpstream(this);
         SearchShardTarget searchShardTarget = new SearchShardTarget(
                 clusterService.localNode().id(), shardId.getIndex(), shardId.id());
@@ -152,7 +149,7 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
                 new CollectInputSymbolVisitor<>(functions, LuceneDocLevelReferenceResolver.INSTANCE);
         LuceneQueryBuilder builder = new LuceneQueryBuilder(functions, searchContext, indexService.cache());
         try {
-            LuceneQueryBuilder.Context ctx = builder.convert(whereClause);
+            LuceneQueryBuilder.Context ctx = builder.convert(collectNode.whereClause());
             searchContext.parsedQuery(new ParsedQuery(ctx.query(), ImmutableMap.<String, Filter>of()));
             Float minScore = ctx.minScore();
             if (minScore != null) {
