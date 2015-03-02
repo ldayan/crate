@@ -68,11 +68,7 @@ public class PlanNodeBuilder {
                                                   @Nullable OrderBy orderBy,
                                                   @Nullable Integer limit) {
         CollectNode node = distributingCollect(tableInfo, whereClause, toCollect, downstreamNodes, projections);
-        if( orderBy != null) {
-            node.orderBy(orderBy.orderBySymbols());
-            node.reverseFlags(orderBy.reverseFlags());
-            node.nullsFirst(orderBy.nullsFirst());
-        }
+        node.orderBy(orderBy);
         if (limit != null) {
             node.limit(limit);
         }
@@ -143,11 +139,7 @@ public class PlanNodeBuilder {
         node.isPartitioned(tableInfo.isPartitioned());
         node.isSystemSchema(tableInfo.schemaInfo().systemSchema());
         setOutputTypes(node);
-        if( orderBy != null) {
-            node.orderBy(orderBy.orderBySymbols());
-            node.reverseFlags(orderBy.reverseFlags());
-            node.nullsFirst(orderBy.nullsFirst());
-        }
+        node.orderBy(orderBy);
         if (limit != null) {
             node.limit(limit);
         }

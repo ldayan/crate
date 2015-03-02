@@ -78,7 +78,7 @@ public class CollectInputSymbolVisitor<E extends Input<?>>
         if (node.toCollect() != null) {
             for (Symbol symbol : node.toCollect()) {
                 if(node.orderBy() != null && node.limit() != null &&
-                        node.orderBy().contains(symbol) &&
+                        node.orderBy().orderBySymbols().contains(symbol) &&
                         !node.isSystemSchema()) {
                     context.addOrderBySymbol(symbol);
                 }

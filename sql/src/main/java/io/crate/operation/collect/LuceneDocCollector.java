@@ -24,6 +24,7 @@ package io.crate.operation.collect;
 import com.google.common.collect.ImmutableMap;
 import io.crate.Constants;
 import io.crate.action.sql.query.CrateSearchService;
+import io.crate.analyze.OrderBy;
 import io.crate.analyze.WhereClause;
 import io.crate.breaker.CrateCircuitBreakerService;
 import io.crate.breaker.RamAccountingContext;
@@ -109,10 +110,7 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
     private final RowDownstreamHandle downstream;
     private final List<LuceneCollectorExpression<?>> collectorExpressions;
     private final Integer limit;
-    private final List<Symbol> orderBy;
-    private final boolean[] reverseFlags;
-    private final Boolean[] nullsFirst;
-
+    private final OrderBy orderBy;
 
     public LuceneDocCollector(ThreadPool threadPool,
                               ClusterService clusterService,
@@ -127,14 +125,10 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
                               Functions functions,
                               WhereClause whereClause,
                               RowDownstream downStreamProjector,
-                              Integer limit,
-                              @Nullable List<Symbol> orderBy,
-                              @Nullable boolean[] reverseFlags,
-                              @Nullable Boolean[] nullsFirst) throws Exception {
+                              @Nullable Integer limit,
+                              @Nullable OrderBy orderBy) {
         this.limit = limit;
         this.orderBy = orderBy;
-        this.reverseFlags = reverseFlags;
-        this.nullsFirst = nullsFirst;
         this.downstream = downStreamProjector.registerUpstream(this);
         SearchShardTarget searchShardTarget = new SearchShardTarget(
                 clusterService.localNode().id(), shardId.getIndex(), shardId.id());
@@ -213,14 +207,15 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
         for (LuceneCollectorExpression expr : collectorExpressions) {
             if ( expr instanceof PrefetchedValueCollectorExpression) {
                 Object fieldValue = ((FieldDoc)scoreDoc).fields[i];
-                Object missingValue = missingValue(reverseFlags[i],
-                        nullsFirst[i],
+                Object missingValue = missingValue(orderBy.reverseFlags()[i],
+                        orderBy.nullsFirst()[i],
                         ((IndexFieldData.XFieldComparatorSource)sortFields[i].getComparatorSource()).reducedType());
                 if(fieldValue != null && fieldValue.equals(missingValue)) {
                     fieldValue = null;
                 }
                 Object value = ((PrefetchedValueCollectorExpression) expr).valueType().value(fieldValue);
                 ((PrefetchedValueCollectorExpression) expr).value(value);
+                i++;
             }
         }
     }
@@ -250,9 +245,7 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
         // do the lucene search
         try {
             if( orderBy != null && limit != null) {
-                Sort sort = CrateSearchService.generateLuceneSort(searchContext, orderBy,
-                        reverseFlags, nullsFirst,
-                        inputSymbolVisitor);
+                Sort sort = CrateSearchService.generateLuceneSort(searchContext, orderBy, inputSymbolVisitor);
                 TopFieldDocs topFieldDocs = searchContext.searcher().search(query, limit, sort);
                 IndexReaderContext indexReaderContext = searchContext.searcher().getTopReaderContext();
 

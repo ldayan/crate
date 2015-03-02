@@ -114,7 +114,7 @@ public class GroupingProjectorTest {
         assertThat(projector.setNextRow(emptyRow), is(true)); // vogon
         assertThat(projector.setNextRow(emptyRow), is(false)); // mouse
         assertThat(projector.setNextRow(emptyRow), is(false)); // mouse
-        projector.upstreamFinished();
+        projector.finish();
 
         Bucket rows = collectingProjector.result().get();
         assertThat(rows.size(), is(2));

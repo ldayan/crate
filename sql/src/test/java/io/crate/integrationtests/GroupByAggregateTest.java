@@ -21,7 +21,6 @@
 
 package io.crate.integrationtests;
 
-import com.carrotsearch.randomizedtesting.annotations.Repeat;
 import io.crate.action.sql.SQLActionException;
 import io.crate.action.sql.SQLResponse;
 import io.crate.test.integration.CrateIntegrationTest;
@@ -1097,7 +1096,7 @@ public class GroupByAggregateTest extends SQLTransportIntegrationTest {
     }
 
     @Test
-    public void testGroupByOnGroupingKeyReduceOnCollectorGroupBy() throws Exception {
+    public void testGroupByReduceOnCollectorGroupBy() throws Exception {
         execute("create table foo (id int primary key, name string primary key) with (number_of_replicas = 0)");
         ensureGreen();
 

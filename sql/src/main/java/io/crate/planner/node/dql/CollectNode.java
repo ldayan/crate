@@ -25,6 +25,7 @@ import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import io.crate.analyze.EvaluatingNormalizer;
+import io.crate.analyze.OrderBy;
 import io.crate.analyze.WhereClause;
 import io.crate.metadata.Routing;
 import io.crate.planner.RowGranularity;
@@ -56,9 +57,7 @@ public class CollectNode extends AbstractDQLPlanNode {
     private boolean isSystemSchema = false;
 
     private Integer limit = null;
-    private List<Symbol> orderBy;
-    boolean[] reverseFlags;
-    private Boolean[] nullsFirst;
+    private OrderBy orderBy = null;
 
     public CollectNode(String id) {
         super(id);
@@ -105,32 +104,12 @@ public class CollectNode extends AbstractDQLPlanNode {
         this.limit = limit;
     }
 
-    public List<Symbol> orderBy() {
+    public @Nullable OrderBy orderBy() {
         return orderBy;
     }
 
-    public void orderBy(@Nullable List<Symbol> orderBy) {
+    public void orderBy(@Nullable OrderBy orderBy) {
         this.orderBy = orderBy;
-    }
-
-    public boolean[] reverseFlags() {
-        return reverseFlags;
-    }
-
-    public void reverseFlags(boolean[] reverseFlags) {
-        this.reverseFlags = reverseFlags;
-    }
-
-    public boolean isOrdered() {
-        return reverseFlags != null && reverseFlags.length > 0;
-    }
-
-    public Boolean[] nullsFirst() {
-        return nullsFirst;
-    }
-
-    public void nullsFirst(Boolean[] nullsFirst) {
-        this.nullsFirst = nullsFirst;
     }
 
     public CollectNode(String id, Routing routing, List<Symbol> toCollect, List<Projection> projections) {
@@ -247,25 +226,11 @@ public class CollectNode extends AbstractDQLPlanNode {
         if( in.readBoolean()) {
             limit = in.readVInt();
         }
-        int numOrderBy = in.readVInt();
 
-        if (numOrderBy > 0) {
-            reverseFlags = new boolean[numOrderBy];
-
-            for (int i = 0; i < reverseFlags.length; i++) {
-                reverseFlags[i] = in.readBoolean();
-            }
-
-            orderBy = new ArrayList<>(numOrderBy);
-            for (int i = 0; i < reverseFlags.length; i++) {
-                orderBy.add(Symbol.fromStream(in));
-            }
-
-            nullsFirst = new Boolean[numOrderBy];
-            for (int i = 0; i < numOrderBy; i++) {
-                nullsFirst[i] = in.readOptionalBoolean();
-            }
+        if (in.readBoolean()) {
+            orderBy = OrderBy.fromStream(in);
         }
+
         isSystemSchema = in.readBoolean();
     }
 
@@ -308,19 +273,11 @@ public class CollectNode extends AbstractDQLPlanNode {
         } else {
             out.writeBoolean(false);
         }
-        if (isOrdered()) {
-            out.writeVInt(reverseFlags.length);
-            for (boolean reverseFlag : reverseFlags) {
-                out.writeBoolean(reverseFlag);
-            }
-            for (Symbol symbol : orderBy) {
-                Symbol.toStream(symbol, out);
-            }
-            for (Boolean nullFirst : nullsFirst) {
-                out.writeOptionalBoolean(nullFirst);
-            }
+        if (orderBy != null) {
+            out.writeBoolean(true);
+            OrderBy.toStream(orderBy, out);
         } else {
-            out.writeVInt(0);
+            out.writeBoolean(false);
         }
         out.writeBoolean(isSystemSchema);
     }

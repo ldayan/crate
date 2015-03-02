@@ -25,6 +25,7 @@ import com.google.common.base.MoreObjects;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
 import io.crate.Constants;
+import io.crate.analyze.OrderBy;
 import io.crate.core.StringUtils;
 import io.crate.executor.transport.task.elasticsearch.SortOrder;
 import io.crate.lucene.LuceneQueryBuilder;
@@ -360,12 +361,10 @@ public class CrateSearchService extends InternalSearchService {
 
     @Nullable
     public static Sort generateLuceneSort(SearchContext context,
-                                     List<Symbol> symbols,
-                                     boolean[] reverseFlags,
-                                     Boolean[] nullsFirst,
+                                     OrderBy orderBy,
                                      CollectInputSymbolVisitor<LuceneCollectorExpression<?>> inputSymbolVisitor) {
         SortSymbolVisitor sortSymbolVisitor = new SortSymbolVisitor(inputSymbolVisitor);
-        return generateLuceneSort(context, symbols, reverseFlags, nullsFirst, sortSymbolVisitor);
+        return generateLuceneSort(context, orderBy.orderBySymbols(), orderBy.reverseFlags(), orderBy.nullsFirst(), sortSymbolVisitor);
     }
 
     private static class SortSymbolContext {

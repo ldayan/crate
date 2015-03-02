@@ -189,8 +189,6 @@ public class ShardCollectService {
                 collectNode.whereClause(),
                 downstream,
                 collectNode.limit(),
-                collectNode.orderBy(),
-                collectNode.reverseFlags(),
-                collectNode.nullsFirst());
+                collectNode.orderBy());
     }
 }

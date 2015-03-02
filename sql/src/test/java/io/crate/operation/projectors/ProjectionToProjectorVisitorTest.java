@@ -250,13 +250,13 @@ public class ProjectionToProjectorVisitorTest {
         GroupProjection projection = new GroupProjection(Arrays.<Symbol>asList(new InputColumn(0, DataTypes.STRING)),
                 new ArrayList<Aggregation>(), 1);
         Projector projector = visitor.process(projection, RAM_ACCOUNTING_CONTEXT);
-        projector.registerUpstream(null);
+        RowDownstreamHandle handle = projector.registerUpstream(null);
         projector.startProjection();
         BytesRef human = new BytesRef("human");
         BytesRef vogon = new BytesRef("vogon");
-        assertThat(projector.setNextRow(spare(human)), is(true));
-        assertThat(projector.setNextRow(spare(human)), is(true));
-        assertThat(projector.setNextRow(spare(vogon)), is(false));
+        assertThat(handle.setNextRow(spare(human)), is(true));
+        assertThat(handle.setNextRow(spare(human)), is(true));
+        assertThat(handle.setNextRow(spare(vogon)), is(false));
     }
 
     @Test
@@ -265,18 +265,18 @@ public class ProjectionToProjectorVisitorTest {
                                                                                new InputColumn(1, DataTypes.STRING)),
                 new ArrayList<Aggregation>(), 2);
         Projector projector = visitor.process(projection, RAM_ACCOUNTING_CONTEXT);
-        projector.registerUpstream(null);
+        RowDownstreamHandle handle = projector.registerUpstream(null);
         projector.startProjection();
         BytesRef human = new BytesRef("human");
         BytesRef vogon = new BytesRef("vogon");
         BytesRef male = new BytesRef("male");
         BytesRef female = new BytesRef("female");
-        assertThat(projector.setNextRow(spare(human, female)), is(true));
-        assertThat(projector.setNextRow(spare(human, female)), is(true));
-        assertThat(projector.setNextRow(spare(human, female)), is(true));
-        assertThat(projector.setNextRow(spare(vogon, female)), is(true));
-        assertThat(projector.setNextRow(spare(vogon, female)), is(true));
-        assertThat(projector.setNextRow(spare(vogon, male)), is(false));
+        assertThat(handle.setNextRow(spare(human, female)), is(true));
+        assertThat(handle.setNextRow(spare(human, female)), is(true));
+        assertThat(handle.setNextRow(spare(human, female)), is(true));
+        assertThat(handle.setNextRow(spare(vogon, female)), is(true));
+        assertThat(handle.setNextRow(spare(vogon, female)), is(true));
+        assertThat(handle.setNextRow(spare(vogon, male)), is(false));
     }
 
     @Test

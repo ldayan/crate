@@ -1311,8 +1311,8 @@ public class PlannerTest {
                 "select id from users group by id order by id limit 2 offset 2");
         CollectNode collectNode = planNode.collectNode();
         assertThat(collectNode.limit(), is(4)); // limit + offset
-        assertThat(collectNode.orderBy().size(), is(1));
-        assertThat(((Reference)collectNode.orderBy().get(0)).ident().columnIdent().name(), is("id"));
+        assertThat(collectNode.orderBy().orderBySymbols().size(), is(1));
+        assertThat(((Reference)collectNode.orderBy().orderBySymbols().get(0)).ident().columnIdent().name(), is("id"));
         assertThat(((GroupProjection)collectNode.projections().get(0)).limit(), is(4));
     }
 
@@ -1332,8 +1332,8 @@ public class PlannerTest {
                 "select name from users group by name order by name desc limit 1 offset 3");
         CollectNode collectNode = distributedGroupBy.collectNode();
         assertThat(collectNode.limit(), is(4));
-        assertThat(collectNode.orderBy().size(), is(1));
-        assertThat(((Reference)collectNode.orderBy().get(0)).ident().columnIdent().name(), is("name"));
+        assertThat(collectNode.orderBy().orderBySymbols().size(), is(1));
+        assertThat(((Reference)collectNode.orderBy().orderBySymbols().get(0)).ident().columnIdent().name(), is("name"));
         assertThat(((GroupProjection)collectNode.projections().get(0)).limit(), is(4));
     }
 
@@ -1356,9 +1356,9 @@ public class PlannerTest {
         DistributedGroupBy planNode = (DistributedGroupBy) plan(
                 "select id, name from users group by id, name limit 2");
         CollectNode collectNode = planNode.collectNode();
-        assertThat(collectNode.orderBy().size(), is(2));
-        assertThat(((Reference)collectNode.orderBy().get(0)).ident().columnIdent().name(), is("id"));
-        assertThat(((Reference)collectNode.orderBy().get(1)).ident().columnIdent().name(), is("name"));
+        assertThat(collectNode.orderBy().orderBySymbols().size(), is(2));
+        assertThat(((Reference)collectNode.orderBy().orderBySymbols().get(0)).ident().columnIdent().name(), is("id"));
+        assertThat(((Reference)collectNode.orderBy().orderBySymbols().get(1)).ident().columnIdent().name(), is("name"));
     }
 
     @Test
