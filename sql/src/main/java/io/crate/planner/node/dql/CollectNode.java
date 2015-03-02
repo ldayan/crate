@@ -54,7 +54,6 @@ public class CollectNode extends AbstractDQLPlanNode {
     private RowGranularity maxRowgranularity = RowGranularity.CLUSTER;
     private List<String> downStreamNodes;
     private boolean isPartitioned = false;
-    private boolean isSystemSchema = false;
 
     private Integer limit = null;
     private OrderBy orderBy = null;
@@ -178,14 +177,6 @@ public class CollectNode extends AbstractDQLPlanNode {
         this.jobId = Optional.fromNullable(jobId);
     }
 
-    public boolean isSystemSchema() {
-        return isSystemSchema;
-    }
-
-    public void isSystemSchema(boolean isSystemSchema) {
-        this.isSystemSchema = isSystemSchema;
-    }
-
     @Override
     public <C, R> R accept(PlanNodeVisitor<C, R> visitor, C context) {
         return visitor.visitCollectNode(this, context);
@@ -230,8 +221,6 @@ public class CollectNode extends AbstractDQLPlanNode {
         if (in.readBoolean()) {
             orderBy = OrderBy.fromStream(in);
         }
-
-        isSystemSchema = in.readBoolean();
     }
 
     @Override
@@ -279,7 +268,6 @@ public class CollectNode extends AbstractDQLPlanNode {
         } else {
             out.writeBoolean(false);
         }
-        out.writeBoolean(isSystemSchema);
     }
 
     /**

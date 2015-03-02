@@ -94,7 +94,7 @@ public class DistributedGroupByConsumer implements Consumer {
 
             boolean isRootRelation = context.consumerContext.rootRelation() == table;
             PlanNodeBuilder.CollectorOrderByAndLimit collectorOrderByAndLimit;
-            if(isRootRelation) {
+            if(isRootRelation && !tableInfo.schemaInfo().systemSchema()) {
                collectorOrderByAndLimit = PlanNodeBuilder.createCollectorOrderAndLimit(table.querySpec());
             } else {
                 collectorOrderByAndLimit = new PlanNodeBuilder.CollectorOrderByAndLimit(null, null);

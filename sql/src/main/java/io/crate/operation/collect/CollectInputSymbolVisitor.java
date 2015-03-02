@@ -21,16 +21,18 @@
 
 package io.crate.operation.collect;
 
+import io.crate.analyze.OrderBy;
 import io.crate.exceptions.UnhandledServerException;
 import io.crate.metadata.Functions;
 import io.crate.operation.AbstractImplementationSymbolVisitor;
 import io.crate.operation.Input;
 import io.crate.operation.reference.DocLevelReferenceResolver;
-import io.crate.operation.reference.doc.lucene.PrefetchedValueCollectorExpression;
+import io.crate.operation.reference.doc.lucene.OrderByCollectorExpression;
 import io.crate.planner.node.dql.CollectNode;
 import io.crate.planner.symbol.Reference;
 import io.crate.planner.symbol.Symbol;
 import io.crate.planner.symbol.SymbolFormatter;
+import org.elasticsearch.common.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -48,7 +50,7 @@ public class CollectInputSymbolVisitor<E extends Input<?>>
 
         protected ArrayList<E> docLevelExpressions = new ArrayList<>();
 
-        private ArrayList<Symbol> orderBySymbols = new ArrayList<>();
+        private OrderBy orderBy = null;
 
         public List<E> docLevelExpressions() {
             return docLevelExpressions;
@@ -58,12 +60,12 @@ public class CollectInputSymbolVisitor<E extends Input<?>>
             super.add(input);
         }
 
-        public void addOrderBySymbol(Symbol symbol) {
-            orderBySymbols.add(symbol);
+        public void orderBy(@Nullable OrderBy orderBy) {
+            this.orderBy = orderBy;
         }
 
-        public List<Symbol> orderBySymbols() {
-            return orderBySymbols;
+        public @Nullable OrderBy orderBy() {
+            return this.orderBy;
         }
     }
 
@@ -75,13 +77,9 @@ public class CollectInputSymbolVisitor<E extends Input<?>>
     @Override
     public Context process(CollectNode node) {
         Context context = newContext();
+        context.orderBy(node.orderBy());
         if (node.toCollect() != null) {
             for (Symbol symbol : node.toCollect()) {
-                if(node.orderBy() != null && node.limit() != null &&
-                        node.orderBy().orderBySymbols().contains(symbol) &&
-                        !node.isSystemSchema()) {
-                    context.addOrderBySymbol(symbol);
-                }
                 context.add(process(symbol, context));
             }
         }
@@ -97,8 +95,8 @@ public class CollectInputSymbolVisitor<E extends Input<?>>
     public Input<?> visitReference(Reference symbol, Context context) {
         // only doc level references are allowed here, since other granularities
         // should have been resolved by other visitors already
-        if (context.orderBySymbols() != null && context.orderBySymbols().contains(symbol)) {
-            PrefetchedValueCollectorExpression docLevelExpression = new PrefetchedValueCollectorExpression(symbol.valueType());
+        if (context.orderBy() != null && context.orderBy().orderBySymbols().contains(symbol)) {
+            OrderByCollectorExpression docLevelExpression = new OrderByCollectorExpression(symbol, context.orderBy());
             context.docLevelExpressions.add(docLevelExpression);
             return docLevelExpression;
         } else {

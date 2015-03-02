@@ -120,7 +120,7 @@ public class NonDistributedGroupByConsumer implements Consumer {
             SplitPoints splitPoints = projectionBuilder.getSplitPoints();
 
             PlanNodeBuilder.CollectorOrderByAndLimit collectorOrderByAndLimit;
-            if(context.consumerContext.rootRelation() == table) {
+            if(context.consumerContext.rootRelation() == table && !tableInfo.schemaInfo().systemSchema()) {
                 collectorOrderByAndLimit = PlanNodeBuilder.createCollectorOrderAndLimit(table.querySpec());
             } else {
                 collectorOrderByAndLimit = new PlanNodeBuilder.CollectorOrderByAndLimit(null, null);

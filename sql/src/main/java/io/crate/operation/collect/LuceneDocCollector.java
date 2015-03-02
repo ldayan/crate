@@ -34,18 +34,14 @@ import io.crate.operation.*;
 import io.crate.operation.reference.doc.lucene.CollectorContext;
 import io.crate.operation.reference.doc.lucene.LuceneCollectorExpression;
 import io.crate.operation.reference.doc.lucene.LuceneDocLevelReferenceResolver;
-import io.crate.operation.reference.doc.lucene.PrefetchedValueCollectorExpression;
-import io.crate.planner.symbol.Symbol;
+import io.crate.operation.reference.doc.lucene.OrderByCollectorExpression;
 import org.apache.lucene.index.*;
 import org.apache.lucene.search.*;
-import org.apache.lucene.util.BytesRef;
-import org.apache.lucene.util.BytesRefBuilder;
 import org.elasticsearch.cache.recycler.CacheRecycler;
 import org.elasticsearch.cache.recycler.PageCacheRecycler;
 import org.elasticsearch.cluster.ClusterService;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.util.BigArrays;
-import org.elasticsearch.index.fielddata.IndexFieldData;
 import org.elasticsearch.index.fieldvisitor.FieldsVisitor;
 import org.elasticsearch.index.mapper.internal.SourceFieldMapper;
 import org.elasticsearch.index.query.ParsedQuery;
@@ -202,20 +198,10 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
         }
     }
 
-    public void setNextOrderByValues(ScoreDoc scoreDoc, SortField[] sortFields) {
-        int i = 0;
+    public void setNextOrderByValues(ScoreDoc scoreDoc) {
         for (LuceneCollectorExpression expr : collectorExpressions) {
-            if ( expr instanceof PrefetchedValueCollectorExpression) {
-                Object fieldValue = ((FieldDoc)scoreDoc).fields[i];
-                Object missingValue = missingValue(orderBy.reverseFlags()[i],
-                        orderBy.nullsFirst()[i],
-                        ((IndexFieldData.XFieldComparatorSource)sortFields[i].getComparatorSource()).reducedType());
-                if(fieldValue != null && fieldValue.equals(missingValue)) {
-                    fieldValue = null;
-                }
-                Object value = ((PrefetchedValueCollectorExpression) expr).valueType().value(fieldValue);
-                ((PrefetchedValueCollectorExpression) expr).value(value);
-                i++;
+            if ( expr instanceof OrderByCollectorExpression) {
+                ((OrderByCollectorExpression) expr).setNextFieldDoc((FieldDoc)scoreDoc);
             }
         }
     }
@@ -255,7 +241,7 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
                         AtomicReaderContext subReaderContext = searchContext.searcher().getIndexReader().leaves().get(readerIndex);
                         int subDoc = scoreDoc.doc - subReaderContext.docBase;
                         setNextReader(subReaderContext);
-                        setNextOrderByValues(scoreDoc, sort.getSort());
+                        setNextOrderByValues(scoreDoc);
                         collect(subDoc);
                     }
                 }
@@ -274,37 +260,4 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
             SearchContext.removeCurrent();
         }
     }
-
-    private static final BytesRef MAX_TERM;
-    static {
-        BytesRefBuilder builder = new BytesRefBuilder();
-        final char[] chars = Character.toChars(Character.MAX_CODE_POINT);
-        builder.copyChars(chars, 0, chars.length);
-        MAX_TERM = builder.toBytesRef();
-    }
-
-
-    /** Calculates the missing Values as in {@link org.elasticsearch.index.fielddata.IndexFieldData#missingObject}
-     * The results in the {@link ScoreDoc} contains this missingValues instead of nulls. Because we
-     * need nulls in the result, it's necessary to check if a value is a missingValue.
-     */
-    private Object missingValue(boolean reverseFlag, Boolean nullFirst, SortField.Type type) {
-        boolean min = reverseFlag ^ (nullFirst != null ? nullFirst : reverseFlag);
-        switch (type) {
-            case INT:
-                return min ? Integer.MIN_VALUE : Integer.MAX_VALUE;
-            case LONG:
-                return min ? Long.MIN_VALUE : Long.MAX_VALUE;
-            case FLOAT:
-                return min ? Float.NEGATIVE_INFINITY : Float.POSITIVE_INFINITY;
-            case DOUBLE:
-                return min ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;
-            case STRING:
-            case STRING_VAL:
-                return min ? null : MAX_TERM;
-            default:
-                throw new UnsupportedOperationException("Unsupported reduced type: " + type);
-        }
-    }
-
 }

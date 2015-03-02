@@ -137,7 +137,6 @@ public class PlanNodeBuilder {
         node.maxRowGranularity(tableInfo.rowGranularity());
         node.projections(projections);
         node.isPartitioned(tableInfo.isPartitioned());
-        node.isSystemSchema(tableInfo.schemaInfo().systemSchema());
         setOutputTypes(node);
         node.orderBy(orderBy);
         if (limit != null) {

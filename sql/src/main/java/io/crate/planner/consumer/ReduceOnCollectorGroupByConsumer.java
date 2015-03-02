@@ -151,7 +151,7 @@ public class ReduceOnCollectorGroupByConsumer implements Consumer {
             }
 
             PlanNodeBuilder.CollectorOrderByAndLimit collectorOrderByAndLimit;
-            if(context.rootRelation() == table) {
+            if(context.rootRelation() == table && !tableInfo.schemaInfo().systemSchema()) {
                 collectorOrderByAndLimit = PlanNodeBuilder.createCollectorOrderAndLimit(table.querySpec());
             } else {
                 collectorOrderByAndLimit = new PlanNodeBuilder.CollectorOrderByAndLimit(null, null);
