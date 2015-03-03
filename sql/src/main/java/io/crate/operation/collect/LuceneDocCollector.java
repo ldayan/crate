@@ -70,6 +70,8 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
     private RamAccountingContext ramAccountingContext;
     private CollectInputSymbolVisitor<LuceneCollectorExpression<?>> inputSymbolVisitor;
 
+    private final static int DEFAULT_PAGE_SIZE = 1;
+
     public static class CollectorFieldsVisitor extends FieldsVisitor {
 
         final HashSet<String> requiredFields;
@@ -227,19 +229,24 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
 
         // do the lucene search
         try {
-            if( orderBy != null && limit != null) {
+            if( orderBy != null) {
+                Integer toCollect = limit;
+                int batchSize = DEFAULT_PAGE_SIZE;
+                if(toCollect != null){
+                    batchSize = Math.min(DEFAULT_PAGE_SIZE, toCollect);
+                }
                 Sort sort = CrateSearchService.generateLuceneSort(searchContext, orderBy, inputSymbolVisitor);
-                TopFieldDocs topFieldDocs = searchContext.searcher().search(query, limit, sort);
-                IndexReaderContext indexReaderContext = searchContext.searcher().getTopReaderContext();
-
-                if(!indexReaderContext.leaves().isEmpty()) {
-                    for (ScoreDoc scoreDoc : topFieldDocs.scoreDocs) {
-                        int readerIndex = ReaderUtil.subIndex(scoreDoc.doc, searchContext.searcher().getIndexReader().leaves());
-                        AtomicReaderContext subReaderContext = searchContext.searcher().getIndexReader().leaves().get(readerIndex);
-                        int subDoc = scoreDoc.doc - subReaderContext.docBase;
-                        setNextReader(subReaderContext);
-                        setNextOrderByValues(scoreDoc);
-                        collect(subDoc);
+                TopFieldDocs topFieldDocs = searchContext.searcher().search(query, batchSize, sort);
+                ScoreDoc lastCollected = collectTopFields(topFieldDocs);
+                while (lastCollected != null) {
+                    topFieldDocs = (TopFieldDocs)searchContext.searcher().searchAfter(lastCollected, query, batchSize, sort);
+                    lastCollected = collectTopFields(topFieldDocs);
+                    if(toCollect != null) {
+                        toCollect -= topFieldDocs.fields.length;
+                        if (toCollect <= 0){
+                            break;
+                        }
+                        batchSize = Math.min(DEFAULT_PAGE_SIZE, toCollect);
                     }
                 }
             } else {
@@ -256,5 +263,22 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
             searchContext.close();
             SearchContext.removeCurrent();
         }
+    }
+
+    private ScoreDoc collectTopFields(TopFieldDocs topFieldDocs) throws IOException{
+        IndexReaderContext indexReaderContext = searchContext.searcher().getTopReaderContext();
+        ScoreDoc lastDoc = null;
+        if(!indexReaderContext.leaves().isEmpty()) {
+            for (ScoreDoc scoreDoc : topFieldDocs.scoreDocs) {
+                int readerIndex = ReaderUtil.subIndex(scoreDoc.doc, searchContext.searcher().getIndexReader().leaves());
+                AtomicReaderContext subReaderContext = searchContext.searcher().getIndexReader().leaves().get(readerIndex);
+                int subDoc = scoreDoc.doc - subReaderContext.docBase;
+                setNextReader(subReaderContext);
+                setNextOrderByValues(scoreDoc);
+                collect(subDoc);
+                lastDoc = scoreDoc;
+            }
+        }
+        return lastDoc;
     }
 }

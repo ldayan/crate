@@ -37,7 +37,7 @@ public class OrderByCollectorExpression extends LuceneCollectorExpression<Object
         );
     }
 
-    public void value(Object value) {
+    private void value(Object value) {
         if ( missingValue.equals(value) ) {
             this.value = null;
         } else {
