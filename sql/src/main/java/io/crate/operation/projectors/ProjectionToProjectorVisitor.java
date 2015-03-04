@@ -54,7 +54,6 @@ public class ProjectionToProjectorVisitor extends ProjectionVisitor<ProjectionTo
     @Nullable
     private final CollectInputSymbolVisitor<?> docInputSymbolVisitor;
 
-
     public ProjectionToProjectorVisitor(ClusterService clusterService,
                                         Settings settings,
                                         TransportActionProvider transportActionProvider,
@@ -136,6 +135,38 @@ public class ProjectionToProjectorVisitor extends ProjectionVisitor<ProjectionTo
                     projection.offset());
         }
         return projector;
+    }
+
+    @Override
+    public Projector visitMergeProjection(MergeProjection projection, Context context) {
+        List<Input<?>> inputs = new ArrayList<>();
+        List<CollectExpression<?>> collectExpressions = new ArrayList<>();
+
+        ImplementationSymbolVisitor.Context ctx = symbolVisitor.process(projection.outputs());
+        inputs.addAll(ctx.topLevelInputs());
+        collectExpressions.addAll(ctx.collectExpressions());
+
+        /** NOT SURE IF THIS WORKS */
+        int numOutputs = inputs.size();
+        ImplementationSymbolVisitor.Context orderByCtx = symbolVisitor.process(projection.orderBy());
+
+        // append orderby inputs to row, needed for sorting on them
+        inputs.addAll(orderByCtx.topLevelInputs());
+        collectExpressions.addAll(orderByCtx.collectExpressions());
+
+        int[] orderByIndices = new int[inputs.size() - numOutputs];
+        int idx = 0;
+        for (int i = numOutputs; i < inputs.size(); i++) {
+            orderByIndices[idx++] = i;
+        }
+
+        return new MergeProjector(
+                inputs.toArray(new Input<?>[inputs.size()]),
+                collectExpressions.toArray(new CollectExpression[collectExpressions.size()]),
+                numOutputs,
+                orderByIndices,
+                projection.reverseFlags(),
+                projection.nullsFirst());
     }
 
     @Override

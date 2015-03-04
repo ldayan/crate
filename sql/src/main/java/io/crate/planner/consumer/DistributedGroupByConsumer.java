@@ -38,6 +38,7 @@ import io.crate.planner.node.dql.DistributedGroupBy;
 import io.crate.planner.node.dql.GroupByConsumer;
 import io.crate.planner.node.dql.MergeNode;
 import io.crate.planner.projection.GroupProjection;
+import io.crate.planner.projection.MergeProjection;
 import io.crate.planner.projection.Projection;
 import io.crate.planner.projection.TopNProjection;
 import io.crate.planner.projection.builder.ProjectionBuilder;
@@ -109,13 +110,29 @@ public class DistributedGroupByConsumer implements Consumer {
                     Aggregation.Step.PARTIAL,
                     collectorOrderByAndLimit.limit());
 
+            ImmutableList<Projection> collectorProjections = ImmutableList.<Projection>of(groupProjection);
+            List<Symbol> toCollect;
+            if (collectorOrderByAndLimit.orderBy() != null) {
+                MergeProjection mergeProjection = projectionBuilder.mergeProjection(
+                        splitPoints.leaves(),
+                        collectorOrderByAndLimit.orderBy()
+                );
+                collectorProjections = ImmutableList.of(mergeProjection, groupProjection);
+                toCollect = new ArrayList<>(
+                        splitPoints.leaves().size() +
+                                collectorOrderByAndLimit.orderBy().orderBySymbols().size());
+                toCollect.addAll(splitPoints.leaves());
+                toCollect.addAll(collectorOrderByAndLimit.orderBy().orderBySymbols());
+            } else {
+                toCollect = splitPoints.leaves();
+            }
 
             CollectNode collectNode = PlanNodeBuilder.distributingCollect(
                     tableInfo,
                     table.querySpec().where(),
-                    splitPoints.leaves(),
+                    toCollect,
                     Lists.newArrayList(routing.nodes()),
-                    ImmutableList.<Projection>of(groupProjection),
+                    collectorProjections,
                     collectorOrderByAndLimit.orderBy(),
                     collectorOrderByAndLimit.limit()
             );
