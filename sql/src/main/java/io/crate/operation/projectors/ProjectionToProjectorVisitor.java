@@ -21,6 +21,8 @@
 
 package io.crate.operation.projectors;
 
+import com.carrotsearch.hppc.IntObjectOpenHashMap;
+import com.google.common.base.Optional;
 import io.crate.analyze.EvaluatingNormalizer;
 import io.crate.breaker.RamAccountingContext;
 import io.crate.executor.transport.TransportActionProvider;
@@ -37,10 +39,7 @@ import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.index.shard.ShardId;
 
 import javax.annotation.Nullable;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class ProjectionToProjectorVisitor extends ProjectionVisitor<ProjectionToProjectorVisitor.Context, Projector> {
 
@@ -93,6 +92,20 @@ public class ProjectionToProjectorVisitor extends ProjectionVisitor<ProjectionTo
 
     public Projector process(Projection projection, RamAccountingContext ramAccountingContext) {
         return super.process(projection, new Context(ramAccountingContext));
+    }
+
+    public Projector process(Projection projection,
+                             RamAccountingContext ramAccountingContext,
+                             Optional<UUID> jobId) {
+        return super.process(projection, new Context(ramAccountingContext, jobId));
+    }
+
+    public Projector process(Projection projection,
+                             RamAccountingContext ramAccountingContext,
+                             Optional<UUID> jobId,
+                             Optional<IntObjectOpenHashMap<String>> jobSearchContextIds,
+                             Optional<Set<String>> routingNodes) {
+        return super.process(projection, new Context(ramAccountingContext, jobId, jobSearchContextIds, routingNodes));
     }
 
     @Override
@@ -310,12 +323,55 @@ public class ProjectionToProjectorVisitor extends ProjectionVisitor<ProjectionTo
                 projection.requiredVersion());
     }
 
+    @Override
+    public Projector visitFetchProjection(FetchProjection projection, Context context) {
+        assert context.jobId.isPresent() : "FetchProjector needs a jobId";
+        assert context.jobSearchContextIds.isPresent() : "FetchProjector needs jobSearchContextIds";
+        assert context.routingNodes.isPresent() : "FetchProjector needs routingNodes";
+
+        ImplementationSymbolVisitor.Context ctxDocId = new ImplementationSymbolVisitor.Context();
+        symbolVisitor.process(projection.docIdSymbol(), ctxDocId);
+        assert ctxDocId.collectExpressions().size() == 1;
+
+        return new FetchProjector(
+                transportActionProvider.transportFetchNodeAction(),
+                symbolVisitor.functions(),
+                context.jobId.get(),
+                ctxDocId.collectExpressions().iterator().next(),
+                projection.inputSymbols(),
+                projection.outputSymbols(),
+                context.jobSearchContextIds.get(),
+                context.routingNodes.get(),
+                projection.bulkSize()
+                );
+    }
+
     public static class Context {
 
         private final RamAccountingContext ramAccountingContext;
+        private final Optional<UUID> jobId;
+        private final Optional<IntObjectOpenHashMap<String>> jobSearchContextIds;
+        private final Optional<Set<String>> routingNodes;
 
         public Context(RamAccountingContext ramAccountingContext) {
+            this(ramAccountingContext, Optional.<UUID>absent(),
+                    Optional.<IntObjectOpenHashMap<String>>absent(),
+                    Optional.<Set<String>>absent());
+        }
+
+        public Context(RamAccountingContext ramAccountingContext, Optional<UUID> jobId) {
+            this(ramAccountingContext, jobId, Optional.<IntObjectOpenHashMap<String>>absent(),
+                    Optional.<Set<String>>absent());
+        }
+
+        public Context(RamAccountingContext ramAccountingContext,
+                       Optional<UUID> jobId,
+                       Optional<IntObjectOpenHashMap<String>> jobSearchContextIds,
+                       Optional<Set<String>> routingNodes) {
             this.ramAccountingContext = ramAccountingContext;
+            this.jobId = jobId;
+            this.jobSearchContextIds = jobSearchContextIds;
+            this.routingNodes = routingNodes;
         }
 
     }

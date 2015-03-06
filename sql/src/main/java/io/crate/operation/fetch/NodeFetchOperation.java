@@ -22,6 +22,7 @@
 package io.crate.operation.fetch;
 
 import com.carrotsearch.hppc.IntArrayList;
+import com.carrotsearch.hppc.LongArrayList;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -46,21 +47,22 @@ import java.util.concurrent.ThreadPoolExecutor;
 public class NodeFetchOperation {
 
     private final UUID jobId;
-    private final Map<Integer, IntArrayList> jobSearchContextDocIds;
     private final List<Symbol> toFetchSymbols;
     private final boolean closeContext;
+    private final Map<Integer, ShardDocIdsBucket> shardBuckets = new HashMap<>();
 
     private final CollectContextService collectContextService;
     private final RamAccountingContext ramAccountingContext;
     private final CollectInputSymbolVisitor<?> docInputSymbolVisitor;
-    private final String executorName = ThreadPool.Names.SEARCH;
     private final ThreadPoolExecutor executor;
     private final int poolSize;
+
+    private long inputCursor = 0;
 
     private final ESLogger logger = Loggers.getLogger(getClass());
 
     public NodeFetchOperation(UUID jobId,
-                              Map<Integer, IntArrayList> jobSearchContextDocIds,
+                              List<Long> jobSearchContextDocIds,
                               List<Symbol> toFetchSymbols,
                               boolean closeContext,
                               CollectContextService collectContextService,
@@ -68,12 +70,11 @@ public class NodeFetchOperation {
                               Functions functions,
                               RamAccountingContext ramAccountingContext) {
         this.jobId = jobId;
-        this.jobSearchContextDocIds = jobSearchContextDocIds;
         this.toFetchSymbols = toFetchSymbols;
         this.closeContext = closeContext;
         this.collectContextService = collectContextService;
         this.ramAccountingContext = ramAccountingContext;
-        executor = (ThreadPoolExecutor) threadPool.executor(executorName);
+        executor = (ThreadPoolExecutor) threadPool.executor(ThreadPool.Names.SEARCH);
         poolSize = executor.getPoolSize();
 
         DocLevelReferenceResolver<? extends Input<?>> resolver = LuceneDocLevelReferenceResolver.INSTANCE;
@@ -82,10 +83,27 @@ public class NodeFetchOperation {
                 resolver
         );
 
+        createShardBuckets(jobSearchContextDocIds);
+    }
+
+    private void createShardBuckets(List<Long> jobSearchContextDocIds) {
+        int shardIndex = 0;
+        for (long jobSearchContextDocId : jobSearchContextDocIds) {
+            // unpack jobSearchContextId and docId integers from jobSearchContextDocId long
+            int jobSearchContextId = (int)(jobSearchContextDocId >> 32);
+            int docId = (int)jobSearchContextDocId;
+
+            ShardDocIdsBucket shardDocIdsBucket = shardBuckets.get(jobSearchContextId);
+            if (shardDocIdsBucket == null) {
+                shardDocIdsBucket = new ShardDocIdsBucket(shardIndex++);
+                shardBuckets.put(jobSearchContextId, shardDocIdsBucket);
+            }
+            shardDocIdsBucket.add(inputCursor++, docId);
+        }
     }
 
     public ListenableFuture<Bucket> fetch() throws Exception {
-        int numShards = jobSearchContextDocIds.size();
+        int numShards = shardBuckets.size();
         ShardProjectorChain projectorChain = new ShardProjectorChain(numShards,
                 ImmutableList.<Projection>of(), null, ramAccountingContext);
 
@@ -101,21 +119,23 @@ public class NodeFetchOperation {
 
         CollectInputSymbolVisitor.Context docCtx = docInputSymbolVisitor.process(toFetchSymbols);
         Projector downstream = projectorChain.newShardDownstreamProjector(null);
+        int[] orderByColumnIndices = new int[]{toFetchSymbols.size()};
+        PositionalRowMerger upstreamsRowMerger = new PositionalRowMerger(downstream, numShards, orderByColumnIndices);
 
         List<LuceneDocFetcher> shardFetchers = new ArrayList<>(numShards);
-        for (Map.Entry<Integer, IntArrayList> entry : jobSearchContextDocIds.entrySet()) {
+        for (Map.Entry<Integer, ShardDocIdsBucket> entry : shardBuckets.entrySet()) {
             LuceneDocCollector docCollector = jobCollectContext.findCollector(entry.getKey());
             if (docCollector == null) {
                 String errorMsg = String.format(Locale.ENGLISH, "No lucene collector found for job search context id '%s'", entry.getKey());
                 logger.error(errorMsg);
                 throw new IllegalArgumentException(errorMsg);
             }
-            docCollector.searchContext().docIdsToLoad(entry.getValue().toArray(), 0, entry.getValue().size());
             shardFetchers.add(
                     new LuceneDocFetcher(
                             docCtx.topLevelInputs(),
                             docCtx.docLevelExpressions(),
-                            downstream,
+                            upstreamsRowMerger,
+                            entry.getValue(),
                             jobCollectContext,
                             docCollector.searchContext(),
                             entry.getKey(),
@@ -183,5 +203,37 @@ public class NodeFetchOperation {
         }
     }
 
+
+    static class ShardDocIdsBucket {
+
+        private final int shardId;
+        private final LongArrayList positions = new LongArrayList();
+        private final IntArrayList docIds = new IntArrayList();
+
+        public ShardDocIdsBucket(int shardId) {
+            this.shardId = shardId;
+        }
+
+        public void add(long position, int docId) {
+            positions.add(position);
+            docIds.add(docId);
+        }
+
+        public int[] docIds() {
+            return docIds.toArray();
+        }
+
+        public int size() {
+            return docIds.size();
+        }
+
+        public long position(int idx) {
+            return positions.get(idx);
+        }
+
+        public int shardId() {
+            return shardId;
+        }
+    }
 
 }

@@ -30,6 +30,7 @@ import io.crate.planner.projection.Projection;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * A chain of connected projectors rows will flow through.
@@ -54,13 +55,23 @@ public class FlatProjectorChain {
     public FlatProjectorChain(List<Projection> projections,
                               ProjectionToProjectorVisitor projectorVisitor,
                               RamAccountingContext ramAccountingContext) {
-        this(projections, projectorVisitor, ramAccountingContext, Optional.<ResultProvider>absent());
+        this(projections, projectorVisitor, ramAccountingContext,
+                Optional.<ResultProvider>absent(), Optional.<UUID>absent());
     }
 
     public FlatProjectorChain(List<Projection> projections,
                               ProjectionToProjectorVisitor projectorVisitor,
                               RamAccountingContext ramAccountingContext,
                               Optional<ResultProvider> resultProvider) {
+        this(projections, projectorVisitor, ramAccountingContext,
+                resultProvider, Optional.<UUID>absent());
+    }
+
+    public FlatProjectorChain(List<Projection> projections,
+                              ProjectionToProjectorVisitor projectorVisitor,
+                              RamAccountingContext ramAccountingContext,
+                              Optional<ResultProvider> resultProvider,
+                              Optional<UUID> jobId) {
         if (projections.size() == 0) {
             if (resultProvider.isPresent()) {
                 this.resultProvider = resultProvider.get();
@@ -74,7 +85,7 @@ public class FlatProjectorChain {
             projectors = new ArrayList<>();
             Projector previousProjector = null;
             for (Projection projection : projections) {
-                Projector projector = projectorVisitor.process(projection, ramAccountingContext);
+                Projector projector = projectorVisitor.process(projection, ramAccountingContext, jobId);
                 projectors.add(projector);
                 if (previousProjector != null) {
                     previousProjector.downstream(projector);

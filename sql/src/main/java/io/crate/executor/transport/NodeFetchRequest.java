@@ -21,20 +21,20 @@
 
 package io.crate.executor.transport;
 
-import com.carrotsearch.hppc.IntArrayList;
-import com.carrotsearch.hppc.cursors.IntCursor;
 import io.crate.planner.symbol.Symbol;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.transport.TransportRequest;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 
 public class NodeFetchRequest extends TransportRequest {
 
     private UUID jobId;
-    private Map<Integer, IntArrayList> jobSearchContextDocIds = new HashMap<>();
+    private List<Long> jobSearchContextDocIds;
     private List<Symbol> toFetchSymbols;
     private boolean closeContext = true;
 
@@ -49,16 +49,11 @@ public class NodeFetchRequest extends TransportRequest {
         return jobId;
     }
 
-    public void addDocId(int jobSearchContextId, int docId) {
-        IntArrayList docIds = jobSearchContextDocIds.get(jobSearchContextId);
-        if (docIds == null) {
-            docIds = new IntArrayList();
-            jobSearchContextDocIds.put(jobSearchContextId, docIds);
-        }
-        docIds.add(docId);
+    public void jobSearchContextDocIds(List<Long> jobSearchContextDocIds) {
+        this.jobSearchContextDocIds = jobSearchContextDocIds;
     }
 
-    public Map<Integer, IntArrayList> jobSearchContextDocIds() {
+    public List<Long> jobSearchContextDocIds() {
         return jobSearchContextDocIds;
     }
 
@@ -82,16 +77,10 @@ public class NodeFetchRequest extends TransportRequest {
     public void readFrom(StreamInput in) throws IOException {
         super.readFrom(in);
         jobId = new UUID(in.readLong(), in.readLong());
-        int mapSize = in.readVInt();
-        jobSearchContextDocIds = new HashMap<>(mapSize);
-        for (int i = 0; i < mapSize; i++) {
-            Integer jobSearchContextId = in.readVInt();
-            int docIdsSize = in.readVInt();
-            IntArrayList docIds = new IntArrayList(docIdsSize);
-            for (int j = 0; j < docIdsSize; j++) {
-                docIds.add(in.readVInt());
-            }
-            jobSearchContextDocIds.put(jobSearchContextId, docIds);
+        int listSize = in.readVInt();
+        jobSearchContextDocIds = new ArrayList<>(listSize);
+        for (int i = 0; i < listSize; i++) {
+            jobSearchContextDocIds.add(in.readVLong());
         }
         int symbolsSize = in.readVInt();
         toFetchSymbols = new ArrayList<>(symbolsSize);
@@ -107,12 +96,8 @@ public class NodeFetchRequest extends TransportRequest {
         out.writeLong(jobId.getMostSignificantBits());
         out.writeLong(jobId.getLeastSignificantBits());
         out.writeVInt(jobSearchContextDocIds.size());
-        for (Map.Entry<Integer, IntArrayList> entry : jobSearchContextDocIds.entrySet()) {
-            out.writeVInt(entry.getKey());
-            out.writeVInt(entry.getValue().size());
-            for (IntCursor cursor : entry.getValue()) {
-                out.writeVInt(cursor.value);
-            }
+        for (Long jobSearchContextDocId : jobSearchContextDocIds) {
+            out.writeVLong(jobSearchContextDocId);
         }
         out.writeVInt(toFetchSymbols.size());
         for (Symbol symbol : toFetchSymbols) {

@@ -26,9 +26,7 @@ import io.crate.breaker.CrateCircuitBreakerService;
 import io.crate.breaker.RamAccountingContext;
 import io.crate.operation.Input;
 import io.crate.operation.InputRow;
-import io.crate.operation.ProjectorUpstream;
 import io.crate.operation.collect.JobCollectContext;
-import io.crate.operation.projectors.Projector;
 import io.crate.operation.reference.doc.lucene.CollectorContext;
 import io.crate.operation.reference.doc.lucene.DocCollectorExpression;
 import io.crate.operation.reference.doc.lucene.LuceneCollectorExpression;
@@ -38,13 +36,14 @@ import org.apache.lucene.index.ReaderUtil;
 import java.io.IOException;
 import java.util.List;
 
-public class LuceneDocFetcher implements ProjectorUpstream {
+public class LuceneDocFetcher{
 
-    private Projector downstream;
     private RamAccountingContext ramAccountingContext;
 
     private final InputRow inputRow;
     private final List<LuceneCollectorExpression<?>> collectorExpressions;
+    private final PositionalRowMerger upstreamsRowMerger;
+    private final NodeFetchOperation.ShardDocIdsBucket shardDocIdsBucket;
     private final JobCollectContext jobCollectContext;
     private final CrateSearchContext searchContext;
     private final int jobSearchContextId;
@@ -52,25 +51,21 @@ public class LuceneDocFetcher implements ProjectorUpstream {
 
     public LuceneDocFetcher(List<Input<?>> inputs,
                             List<LuceneCollectorExpression<?>> collectorExpressions,
-                            Projector downstreamProjector,
+                            PositionalRowMerger upstreamsRowMerger,
+                            NodeFetchOperation.ShardDocIdsBucket shardDocIdsBucket,
                             JobCollectContext jobCollectContext,
                             CrateSearchContext searchContext,
                             int jobSearchContextId,
                             boolean closeContext) {
         assert validateExpressions(collectorExpressions) : "ChildDocCollectorExpression only supported here";
-        downstream(downstreamProjector);
         inputRow = new InputRow(inputs);
         this.collectorExpressions = collectorExpressions;
+        this.upstreamsRowMerger = upstreamsRowMerger;
+        this.shardDocIdsBucket = shardDocIdsBucket;
         this.jobCollectContext = jobCollectContext;
         this.searchContext = searchContext;
         this.jobSearchContextId = jobSearchContextId;
         this.closeContext = closeContext;
-    }
-
-    @Override
-    public void downstream(Projector downstream) {
-        downstream.registerUpstream(this);
-        this.downstream = downstream;
     }
 
     public void setNextReader(AtomicReaderContext context) throws IOException {
@@ -79,7 +74,7 @@ public class LuceneDocFetcher implements ProjectorUpstream {
         }
     }
 
-    private void fetch(int doc) throws Exception {
+    private void fetch(int shardId, long position, int doc) throws Exception {
         if (ramAccountingContext != null && ramAccountingContext.trippedBreaker()) {
             // stop fetching because breaker limit was reached
             throw new UnexpectedFetchTerminatedException(
@@ -89,7 +84,7 @@ public class LuceneDocFetcher implements ProjectorUpstream {
         for (LuceneCollectorExpression e : collectorExpressions) {
             e.setNextDocId(doc);
         }
-        if (!downstream.setNextRow(inputRow)) {
+        if (!upstreamsRowMerger.setNextRow(shardId, position, inputRow)) {
             // no more rows required, we can stop here
             throw new FetchAbortedException();
         }
@@ -108,20 +103,21 @@ public class LuceneDocFetcher implements ProjectorUpstream {
         }
 
         try {
+            searchContext.docIdsToLoad(shardDocIdsBucket.docIds(), 0, shardDocIdsBucket.size());
             for (int index = 0; index < searchContext.docIdsToLoadSize(); index++) {
                 int docId = searchContext.docIdsToLoad()[searchContext.docIdsToLoadFrom() + index];
                 int readerIndex = ReaderUtil.subIndex(docId, searchContext.searcher().getIndexReader().leaves());
                 AtomicReaderContext subReaderContext = searchContext.searcher().getIndexReader().leaves().get(readerIndex);
                 int subDoc = docId - subReaderContext.docBase;
                 setNextReader(subReaderContext);
-                fetch(subDoc);
+                fetch(shardDocIdsBucket.shardId(), shardDocIdsBucket.position(index), subDoc);
             }
-            downstream.upstreamFinished();
+            upstreamsRowMerger.upstreamFinished();
         } catch (FetchAbortedException e) {
             // yeah, that's ok! :)
-            downstream.upstreamFinished();
+            upstreamsRowMerger.upstreamFinished();
         } catch (Exception e) {
-            downstream.upstreamFailed(e);
+            upstreamsRowMerger.upstreamFailed(e);
             throw e;
         } finally {
             jobCollectContext.releaseContext(searchContext);
