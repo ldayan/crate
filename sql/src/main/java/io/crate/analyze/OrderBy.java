@@ -21,7 +21,7 @@
 
 package io.crate.analyze;
 
-import io.crate.planner.symbol.Function;
+import io.crate.planner.symbol.Aggregation;
 import io.crate.planner.symbol.Symbol;
 import io.crate.planner.symbol.SymbolVisitor;
 import org.elasticsearch.common.io.stream.StreamInput;
@@ -70,11 +70,11 @@ public class OrderBy implements Streamable {
         normalizer.normalizeInplace(orderBySymbols);
     }
 
-    public boolean hasFunction() {
+    public boolean hasAggregation() {
         SortSymbolContext ctx = new SortSymbolContext();
         for( Symbol symbol : this.orderBySymbols()) {
             SortSymbolVisitor.INSTANCE.process(symbol, ctx);
-            if(ctx.hasFunction) {
+            if(ctx.hasAggregation) {
                 return true;
             }
         }
@@ -134,7 +134,7 @@ public class OrderBy implements Streamable {
     }
 
     private static class SortSymbolContext {
-        public boolean hasFunction = false;
+        public boolean hasAggregation = false;
     }
 
     private static class SortSymbolVisitor extends SymbolVisitor<SortSymbolContext, Void> {
@@ -142,9 +142,9 @@ public class OrderBy implements Streamable {
         public static final SortSymbolVisitor INSTANCE = new SortSymbolVisitor();
 
         @Override
-        public Void visitFunction(Function symbol, SortSymbolContext context) {
-            context.hasFunction = true;
-            return super.visitFunction(symbol, context);
+        public Void visitAggregation(Aggregation symbol, SortSymbolContext context) {
+            context.hasAggregation = true;
+            return super.visitAggregation(symbol, context);
         }
     }
 

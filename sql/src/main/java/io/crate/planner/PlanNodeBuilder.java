@@ -231,7 +231,7 @@ public class PlanNodeBuilder {
             // No orderBy given, order by groupKeys
             collectOrderBy = OrderBy.fromSymbols(querySpec.groupBy());
         }
-        collectOrderBy = collectOrderBy != null && collectOrderBy.hasFunction() ? null : collectOrderBy;
+        collectOrderBy = collectOrderBy != null && collectOrderBy.hasAggregation() ? null : collectOrderBy;
         Integer collectorLimit = collectOrderBy == null ? null : querySpec.offset() + querySpec.limit();
         return new CollectorOrderByAndLimit(collectOrderBy, collectorLimit);
     }
