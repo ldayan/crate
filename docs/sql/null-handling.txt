@@ -1,0 +1,151 @@
+
+
+=============
+Null Handling
+=============
+
+
+In the SQL standard ``null`` is a special marker that is used to indicate that
+a data value does not exist in the database.
+
+Crate's implementation of SQL is a bit different regarding ``null`` handling.
+To see how let's first explain how data is stored inside Crate.
+
+In Crate every user table is sharded into a number of shards. Each shard is a
+Lucene index which is utilized at query time.
+
+
+Lucene operates on an inverted index which is a data structure which consists
+of a list of terms where each term map to a list of document ids.
+
+Given the following statement::
+
+    insert into t (tags) values (['lucene', 'crate']), (['crate']);
+
+The inverted index will contain the unique terms (in this case ``lucene`` and
+``crate``) and both terms will map to document ids for documents that contain
+those terms.
+
+This might look as follows:
+
+    ====== =======
+    term   doc ids
+    ====== =======
+    lucene 1
+    crate  1, 2
+    ====== =======
+
+The problem with this data structure regarding ``null`` values is that there
+are no ``null`` terms to look up documents which would match. They are simply
+not present.
+
+So something like ``where x is null`` cannot operate on the index and will
+instead fall-back to a special operation that will be more expensive to execute
+as it will have to fetch each document and actually check if the value is is
+present.
+
+So far this is similar to how other SQL implementations behave. The difference
+in Crate is that comparisons with ``null`` don't adhere to the three-valued
+logic in all cases.
+
+
+The three-valued-logic is explained as follows on Wikipedia_:
+
+    Since Null is not a member of any data domain, it is not considered a
+    "value", but rather a marker (or placeholder) indicating the absence of
+    value. Because of this, comparisons with Null can never result in either
+    True or False, but always in a third logical result, Unknown.[8] The
+    logical result of the expression below, which compares the value 10 to
+    Null, is Unknown:
+
+    select 10 = null    -- results in null or unknown
+
+
+In Crate there are two execution engines to execute the condition ``10 =
+null``. One is used for literals and if system tables are queried and the other
+one is provided by Lucene.
+
+This has the effect that in Crate ``10 = null`` can actually result in
+different results depending on the context where that expression is used.
+
+For example::
+
+    cr> select 10 = null from sys.cluster;
+    +-------------+
+    | (10 = null) |
+    +-------------+
+    |        NULL |
+    +-------------+
+    SELECT 1 row in set (... sec)
+
+
+Returns ``null`` correctly as expected in regards to the three-valued-logic.
+
+
+But if the Lucene engine is in use it will actually evaluate to false::
+
+.. Hidden: create t table
+
+    cr> create table t (x int) with (number_of_replicas = 0);
+    CREATE OK (... sec)
+
+
+    cr> insert into t (x) values (null);
+    INSERT OK, 1 row affected (... sec)
+
+
+.. Hidden: refresh t
+
+    cr> refresh table t
+    REFRESH OK (... sec)
+
+
+    cr> select * from t where x = 1;
+    +---+
+    | x |
+    +---+
+    +---+
+    SELECT 0 rows in set (... sec)
+
+
+In this case the difference doesn't really matter because both ``NULL`` and
+``false`` actually result in a "doesn't match".
+
+The difference starts to matter once the propagation would take place::
+
+
+    cr> select * from t where not x = 1;
+    +------+
+    |    x |
+    +------+
+    | NULL |
+    +------+
+    SELECT 1 row in set (0.000 sec)
+
+
+In this example ``x = 1`` evaluates to ``false`` and ``not false`` becomes
+``true``.
+
+Now with the correct three-valued-logic the same condition actually doesn't match::
+
+
+    cr> select count(*) from sys.cluster where not null = 1;
+    +----------+
+    | count(*) |
+    +----------+
+    |        0 |
+    +----------+
+    SELECT 1 row in set (... sec)
+
+
+Because ``null = 1`` evaluates to ``null`` and ``not null`` also becomes
+``null``.
+
+
+
+
+
+.. Hidden: drop table t
+
+    cr> drop table t;
+    DROP OK (... sec)

@@ -225,7 +225,8 @@ def test_suite():
                                  doctest.ELLIPSIS)
         s.layer = empty_layer
         suite.addTest(s)
-    for fn in ('best_practice/migrating_from_mongodb.txt',):
+    for fn in ('best_practice/migrating_from_mongodb.txt',
+               'sql/null-handling.txt'):
         path = os.path.join('..', '..', fn)
         s = doctest.DocFileSuite(path, parser=crash_parser,
                                  setUp=setUp,
